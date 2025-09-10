@@ -4,10 +4,18 @@
 #   ansible-playbook playbooks/send_profile.yml \
 #     -l machine1 \
 #     -e "profile_src=[path/to/profile] dest_dir=[path/to/deliver/profile]"
+# 
+# Run Example to Multiple Hosts:
+#   ansible-playbook playbooks/send_profile.yml \
+#     -i inventory.ini \ (run this flag on its own if you to run all hosts specified and see the inventory comments for recommended setups)
+#     -l group_name \ (if you want to specify multiple groups separate them with commas)
+#     -e "profile_src=[path/to/profile] dest_dir=[path/to/deliver/profile]"
+
 
 - name: Send UFW profile to target
   hosts: all
   gather_facts: false
+  #serial: 10 (process x number of hosts at a time)
   vars:
     # These variables are passed at runtime -> profile_src and dest_dir
     profile_basename: "{{ profile_src | basename }}"
