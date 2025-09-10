@@ -1,0 +1,105 @@
+---
+# Deploy (send and execute) one profile to one or more hosts.
+# Run Example:
+#   ansible-playbook playbooks/deploy_profile.yml \
+#     -i inventory.ini \
+#     -e "profile_src=[path/to/profile] \
+#         dest_dir=[path/to/deliver/profile] \
+#         helper_src=~/.config/tufwgo/pdc/tufwgo-deploy"
+
+- name: Send and deploy UFW profile
+  hosts: all
+  gather_facts: false
+  become: true
+  #serial: 10 (process x number of hosts at a time)
+  vars:
+    profile_basename: "{{ profile_src | basename }}"
+    profile_remote_path: "{{ dest_dir }}/{{ profile_basename }}"
+    remote_log_dir: "~/.config/tufwgo/pdc/remlogs"
+    helper_mode: "0755"
+    local_log_dir: "~/.config/tufwgo/pdc/logs"
+    log_base: "tufwgo_pdc_{{ inventory_hostname }}_{{ profile_basename | regex_replace('[^A-Za-z0-9_.-]','_') }}"
+
+  tasks:
+    - name: Ensure destination dirs exist (profiles and logs)
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - "{{ dest_dir }}"
+        - "{{ remote_log_dir }}"
+        - "{{ local_log_dir }}"
+
+    - name: Copy profile to remote
+      ansible.builtin.copy:
+        src: "{{ profile_src }}"
+        dest: "{{ profile_remote_path }}"
+        mode: "0644"
+      register: copy_profile
+
+    - name: Create temp dir for deployment binary
+      ansible.builtin.tempfile:
+        state: directory
+        suffix: "-tufwgo"
+      register: tmpdir
+
+    - name: Define binary path
+      ansible.builtin.set_fact:
+        binary_path: "{{ tmpdir.path }}/tufwgo-deploy"
+
+    - name: Copy binary to temp binary_path
+      ansible.builtin.copy:
+        src: "{{ helper_src }}"
+        dest: "{{binary_path}}"
+        mode: "{{ helper_mode }}"
+
+    - name: Execute profile with binary
+      block:
+        - name: Run binary
+        ansible.builtin.command: >-
+          {{ binary_path }}
+          --profile {{ profile_remote_path }}
+        register: helper_run
+        changed_when: "{{ helper_run.rc == 0 }}"
+        failed_when: "{{ helper_run.rc != 0 }}"
+
+      rescue:
+        - name: Capture failure context into stderr
+          ansible.builtin.debug:
+            msg: "Helper failed on {{ inventory_hostname }} (rc={{ helper_run.rc | default('unknown') }})"
+          failed_when: false
+
+      always:
+        - name: Write stdout to remote log
+          ansible.builtin.copy:
+            dest: "{{ remote_log_dir }}/{ log_base }.stdout.log"
+            content: "{{ helper_run.stdout | default('') }}"
+            mode: "0644"
+          changed_when: false
+        
+        - name: Write stderr to remote log
+          ansible.builtin.copy:
+            dest: "{{ remote_log_dir }}/{{ log_base }}.stderr.log"
+            content: "{{ helper_run.stderr | default('') }}"
+            mode: "0644"
+          changed_when: false
+
+        - name: Remove binary
+          ansible.builtin.file:
+            path: "{{ binary_path }}"
+            state: absent
+
+        - name: Remove temp dir
+          ansible.builtin.file:
+            path: "{{ tmpdir.path }}"
+            state: absent
+
+    - name: Fetch logs back to controller
+      ansible.builtin.fetch:
+        src: "{{ item }}"
+        dest: "{{ local_log_dir }}/"
+        flat: yes
+      loop:
+        - "{{ remote_log_dir }}/{{ log_base }}.stdout.log"
+        - "{{ remote_log_dir }}/{{ log_base }}.stderr.log"
