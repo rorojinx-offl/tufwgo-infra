@@ -1,0 +1,59 @@
+---
+# Send one profile to one or more hosts.
+# Run Example:
+#   ansible-playbook playbooks/send_profile.yml \
+#     -l machine1 \
+#     -e "profile_src=[path/to/profile] dest_dir=[path/to/deliver/profile]"
+
+- name: Send UFW profile to target
+  hosts: all
+  gather_facts: false
+  vars:
+    # These variables are passed at runtime -> profile_src and dest_dir
+    profile_basename: "{{ profile_src | basename }}"
+
+  tasks:
+    - name: Ensure destination directory exists
+      ansible.builtin.file:
+        path: "{{ dest_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Copy profile to remote
+      ansible.builtin.copy:
+        src: "{{ profile_src }}"
+        dest: "{{ dest_dir }}/{{ profile_basename }}"
+        mode: "0644"
+        backup: false
+      register: copy_result
+
+    - name: Compute local checksum (sha256)
+      ansible.builtin.stat:
+        path: "{{ profile_src }}"
+        checksum_algorithm: sha256
+      register: local_stat
+      delegate_to: localhost
+      run_once: true
+
+    - name: Compute remote checksum (sha256)
+      ansible.builtin.stat:
+        path: "{{ dest_dir }}/{{ profile_basename }}"
+        checksum_algorithm: sha256
+      register: remote_stat
+
+    - name: Show checksums for audit
+      ansible.builtin.debug:
+        msg:
+          local_checksum: "{{ local_stat.stat.checksum | default('unknown') }}"
+          remote_checksum: "{{ remote_stat.stat.checksum | default('unknown') }}"
+          changed: "{{ copy_result.changed }}"
+
+    - name: Fail if checksum mismatch
+      ansible.builtin.fail:
+        msg: >-
+          Checksum mismatch! local={{ local_stat.stat.checksum }}
+          remote={{ remote_stat.stat.checksum }}
+      when:
+        - local_stat.stat.checksum is defined
+        - remote_stat.stat.checksum is defined
+        - local_stat.stat.checksum != remote_stat.stat.checksum
