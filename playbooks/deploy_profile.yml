@@ -57,12 +57,12 @@
     - name: Execute profile with binary
       block:
         - name: Run binary
-        ansible.builtin.command: >-
-          {{ binary_path }}
-          --profile {{ profile_remote_path }}
-        register: helper_run
-        changed_when: "{{ helper_run.rc == 0 }}"
-        failed_when: "{{ helper_run.rc != 0 }}"
+          ansible.builtin.command: >-
+            {{ binary_path }}
+            --profile {{ profile_remote_path }}
+          register: helper_run
+          changed_when: "{{ helper_run.rc == 0 }}"
+          failed_when: "{{ helper_run.rc != 0 }}"
 
       rescue:
         - name: Capture failure context into stderr
