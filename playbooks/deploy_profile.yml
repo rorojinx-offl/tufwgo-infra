@@ -73,7 +73,7 @@
       always:
         - name: Write stdout to remote log
           ansible.builtin.copy:
-            dest: "{{ remote_log_dir }}/{ log_base }.stdout.log"
+            dest: "{{ remote_log_dir }}/{{ log_base }}.stdout.log"
             content: "{{ helper_run.stdout | default('') }}"
             mode: "0644"
           changed_when: false
